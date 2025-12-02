@@ -1,0 +1,118 @@
+// app/api/engines/route.ts
+export const runtime = "nodejs"
+
+import { NextResponse } from "next/server"
+import { kv } from "@vercel/kv"
+import {
+  ENGINES,
+  getEngineOrThrow,
+  type EngineId,
+  type ProjectEngineConfig,
+} from "../../lib/engines"
+
+// GET /api/engines?projectId=...
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const projectId = searchParams.get("projectId")
+
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "Missing projectId." },
+        { status: 400 }
+      )
+    }
+
+    const engineKey = `ipbible:engines:${projectId}`
+    const engines = (await kv.get<ProjectEngineConfig>(
+      engineKey
+    )) as ProjectEngineConfig | null
+
+    if (!engines) {
+      return NextResponse.json(
+        { error: "No engine config for this project." },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        engines,
+        availableEngines: Object.values(ENGINES).map((e) => ({
+          id: e.id,
+          label: e.label,
+        })),
+      },
+      { status: 200 }
+    )
+  } catch (err: any) {
+    console.error("GET /api/engines error:", err)
+    return NextResponse.json(
+      { error: err?.message || "Failed to load engines." },
+      { status: 500 }
+    )
+  }
+}
+
+// PATCH /api/engines
+// body: { projectId, canonEngineId?, copilotEngineId?, imageEngineId? }
+export async function PATCH(req: Request) {
+  try {
+    const body = await req.json()
+    const projectId: string | undefined = body.projectId
+    const canonEngineId: EngineId | undefined = body.canonEngineId
+    const copilotEngineId: EngineId | undefined = body.copilotEngineId
+    const imageEngineId: EngineId | undefined = body.imageEngineId
+
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "Missing projectId." },
+        { status: 400 }
+      )
+    }
+
+    const engineKey = `ipbible:engines:${projectId}`
+    const existing = (await kv.get<ProjectEngineConfig>(
+      engineKey
+    )) as ProjectEngineConfig | null
+
+    if (!existing) {
+      return NextResponse.json(
+        { error: "No engine config for this project." },
+        { status: 404 }
+      )
+    }
+
+    // Validate provided ids (if any)
+    if (canonEngineId) getEngineOrThrow(canonEngineId)
+    if (copilotEngineId) getEngineOrThrow(copilotEngineId)
+    if (imageEngineId) getEngineOrThrow(imageEngineId)
+
+    const updated: ProjectEngineConfig = {
+      ...existing,
+      ...(canonEngineId ? { canonEngineId } : {}),
+      ...(copilotEngineId !== undefined ? { copilotEngineId } : {}),
+      ...(imageEngineId !== undefined ? { imageEngineId } : {}),
+    }
+
+    await kv.set(engineKey, updated)
+
+    console.log("PATCH /api/engines", {
+      projectId,
+      updated,
+    })
+
+    return NextResponse.json(
+      {
+        engines: updated,
+      },
+      { status: 200 }
+    )
+  } catch (err: any) {
+    console.error("PATCH /api/engines error:", err)
+    return NextResponse.json(
+      { error: err?.message || "Failed to update engines." },
+      { status: 500 }
+    )
+  }
+}
