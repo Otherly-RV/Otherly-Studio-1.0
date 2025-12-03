@@ -23,24 +23,24 @@ export const dynamic = 'force-dynamic'
 export default async function HomePage() {
   // For now: just take the most recent project.
   // Later we add a proper project switcher.
-  const projects = await sql<ProjectRow[]>`
+  const projects = (await sql`
     SELECT id, title, slug, status
     FROM projects
     ORDER BY created_at DESC
     LIMIT 1
-  `
+  `) as ProjectRow[]
 
   const project = projects[0] || null
 
   let cards: CardRow[] = []
 
   if (project) {
-    cards = await sql<CardRow[]>`
+    cards = (await sql`
       SELECT id, type, title, summary, content, order_index
       FROM cards
       WHERE project_id = ${project.id}
       ORDER BY type, order_index
-    `
+    `) as CardRow[]
   }
 
   return <StudioShell project={project} cards={cards} />
